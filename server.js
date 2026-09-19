@@ -35,7 +35,35 @@ function defaultData() {
   SAVINGS_BUCKETS.forEach(b => {
     savings[b] = { target: 0, balance: 0, history: [] };
   });
-  return { income: [], expenses: [], savings, goals: [], inventory: [], sales: [], customers: [], credits: [] };
+  return {
+    income: [], expenses: [], savings, goals: [], inventory: [], sales: [], customers: [], credits: [],
+    savingsAutomation: {
+      enabled: true,
+      // all percentages, not fractions — 20 means 20%
+      ratePct: 20,                          // % of a day's net balance that gets saved
+      splitPct: { emergency: 20, business: 40, home: 40 }, // how that gets divided between buckets
+      appliedDates: {}                      // { '2026-09-18': { emergency: 800, business: 1600, home: 1600 } }
+    }
+  };
+}
+
+function migrateData(parsed) {
+  if (!parsed.inventory) parsed.inventory = [];
+  if (!parsed.sales) parsed.sales = [];
+  if (!parsed.customers) parsed.customers = [];
+  if (!parsed.credits) parsed.credits = [];
+  if (!parsed.savingsAutomation) {
+    parsed.savingsAutomation = defaultData().savingsAutomation;
+  }
+  // sales made before capital/profit tracking existed: default to 0 so the
+  // math (profit = amount - capital) still works, no crashes on old data
+  parsed.sales.forEach(s => { if (s.capital === undefined) s.capital = 0; });
+  // goals made before direct deposits existed
+  parsed.goals.forEach(g => {
+    if (g.saved === undefined) g.saved = 0;
+    if (!g.history) g.history = [];
+  });
+  return parsed;
 }
 
 function loadData() {
@@ -46,11 +74,7 @@ function loadData() {
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-    if (!parsed.inventory) parsed.inventory = [];
-    if (!parsed.sales) parsed.sales = [];
-    if (!parsed.customers) parsed.customers = [];
-    if (!parsed.credits) parsed.credits = [];
-    return parsed;
+    return migrateData(parsed);
   } catch (e) {
     console.error('data.json is corrupt, starting fresh backup kept as data.json.bak');
     fs.renameSync(DATA_FILE, DATA_FILE + '.bak');
@@ -58,6 +82,47 @@ function loadData() {
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
     return initial;
   }
+}
+
+// ---------- daily savings automation ----------
+// Recomputes what SHOULD have been auto-saved for one date, compares it to
+// what was already auto-saved for that date, and applies only the
+// difference — so calling this again for the same date (e.g. after editing
+// an entry) tops up or claws back instead of double-depositing.
+function applyDailyAutoSavings(data, dateStr) {
+  const auto = data.savingsAutomation;
+  if (!auto || !auto.enabled) return;
+
+  const dayIncome = data.income.filter(i => i.date === dateStr).reduce((s, i) => s + Number(i.amount), 0);
+  const dayExpense = data.expenses.filter(e => e.date === dateStr).reduce((s, e) => s + Number(e.amount), 0);
+  const netBalance = dayIncome - dayExpense;
+
+  const totalToSave = netBalance > 0 ? netBalance * (auto.ratePct / 100) : 0;
+  const targets = {
+    emergency: totalToSave * (auto.splitPct.emergency / 100),
+    business: totalToSave * (auto.splitPct.business / 100),
+    home: totalToSave * (auto.splitPct.home / 100)
+  };
+
+  if (!auto.appliedDates[dateStr]) auto.appliedDates[dateStr] = { emergency: 0, business: 0, home: 0 };
+  const previously = auto.appliedDates[dateStr];
+
+  SAVINGS_BUCKETS.forEach(bucket => {
+    const target = Math.round(targets[bucket]);
+    const already = Math.round(previously[bucket] || 0);
+    const delta = target - already;
+    if (delta === 0) return;
+    data.savings[bucket].balance += delta;
+    data.savings[bucket].history.push({
+      id: genId(),
+      type: delta > 0 ? 'deposit' : 'withdraw',
+      amount: Math.abs(delta),
+      date: dateStr,
+      note: 'Daily savings automation (' + auto.ratePct + '% of ' + dateStr + ' net balance)',
+      source: 'auto'
+    });
+    previously[bucket] = target;
+  });
 }
 
 function saveData(data) {
@@ -292,12 +357,15 @@ function handleRequest(req, res) {
             note: body.note || ''
           };
           data.income.push(entry);
+          applyDailyAutoSavings(data, entry.date);
           saveData(data);
           return sendJSON(res, 201, entry);
         });
       }
       if (req.method === 'DELETE' && segs.length === 3) {
+        const removed = data.income.find(i => i.id === segs[2]);
         data.income = data.income.filter(i => i.id !== segs[2]);
+        if (removed) applyDailyAutoSavings(data, removed.date);
         saveData(data);
         return sendJSON(res, 200, { ok: true });
       }
@@ -316,12 +384,15 @@ function handleRequest(req, res) {
             note: body.note || ''
           };
           data.expenses.push(entry);
+          applyDailyAutoSavings(data, entry.date);
           saveData(data);
           return sendJSON(res, 201, entry);
         });
       }
       if (req.method === 'DELETE' && segs.length === 3) {
+        const removed = data.expenses.find(e => e.id === segs[2]);
         data.expenses = data.expenses.filter(e => e.id !== segs[2]);
+        if (removed) applyDailyAutoSavings(data, removed.date);
         saveData(data);
         return sendJSON(res, 200, { ok: true });
       }
@@ -360,6 +431,44 @@ function handleRequest(req, res) {
           saveData(data);
           return sendJSON(res, 200, data.savings[bucket]);
         });
+      }
+    }
+
+    // ---- savings automation config ----
+    if (segs[1] === 'savings-automation') {
+      if (req.method === 'GET' && segs.length === 2) {
+        return sendJSON(res, 200, {
+          enabled: data.savingsAutomation.enabled,
+          ratePct: data.savingsAutomation.ratePct,
+          splitPct: data.savingsAutomation.splitPct
+        });
+      }
+      if (req.method === 'PUT' && segs.length === 2) {
+        return parseBody(req, (err, body) => {
+          if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+          const splitPct = body.splitPct || {};
+          const sum = Number(splitPct.emergency || 0) + Number(splitPct.business || 0) + Number(splitPct.home || 0);
+          if (Math.round(sum) !== 100) {
+            return sendJSON(res, 400, { error: 'Emergency + Business + Home must add up to 100%' });
+          }
+          data.savingsAutomation.enabled = !!body.enabled;
+          data.savingsAutomation.ratePct = Math.max(0, Math.min(100, Number(body.ratePct) || 0));
+          data.savingsAutomation.splitPct = {
+            emergency: Number(splitPct.emergency) || 0,
+            business: Number(splitPct.business) || 0,
+            home: Number(splitPct.home) || 0
+          };
+          saveData(data);
+          return sendJSON(res, 200, { ok: true });
+        });
+      }
+      if (segs[2] === 'recalculate' && req.method === 'POST') {
+        const dates = new Set();
+        data.income.forEach(i => dates.add(i.date));
+        data.expenses.forEach(e => dates.add(e.date));
+        dates.forEach(d => applyDailyAutoSavings(data, d));
+        saveData(data);
+        return sendJSON(res, 200, { ok: true, datesProcessed: dates.size });
       }
     }
 
@@ -410,19 +519,27 @@ function handleRequest(req, res) {
           if (err || !body.amount) return sendJSON(res, 400, { error: 'amount is required' });
           const qty = Number(body.quantity) || 1;
           let itemName = body.itemName || '';
+          let capital = body.capital !== undefined && body.capital !== '' ? Number(body.capital) : null;
           if (body.itemId) {
             const item = data.inventory.find(i => i.id === body.itemId);
             if (item) {
               item.quantity = Math.max(0, item.quantity - qty);
               itemName = item.name;
+              // capital = what this stock actually cost you, so profit is
+              // accurate even if you don't type a capital figure by hand
+              if (capital === null) capital = item.unitCost * qty;
             }
           }
+          if (capital === null) capital = 0; // walk-in sale, no linked item, no capital typed in
+          const amount = Number(body.amount);
           const sale = {
             id: genId(),
             itemId: body.itemId || null,
             itemName,
             quantity: qty,
-            amount: Number(body.amount),
+            amount,
+            capital,
+            profit: amount - capital,
             date: body.date || today(),
             note: body.note || ''
           };
@@ -504,6 +621,7 @@ function handleRequest(req, res) {
             date: credit.paidDate,
             note: 'Credit payment: ' + credit.customerName + (credit.description ? ' — ' + credit.description : '')
           });
+          applyDailyAutoSavings(data, credit.paidDate);
           saveData(data);
           return sendJSON(res, 200, credit);
         });
@@ -640,12 +758,43 @@ function handleRequest(req, res) {
             target: Number(body.target),
             deadline: body.deadline || null,
             linkedBucket: body.linkedBucket || null,
+            saved: 0,
+            history: [],
             achieved: false,
             achievedDate: null
           };
           data.goals.push(goal);
           saveData(data);
           return sendJSON(res, 201, goal);
+        });
+      }
+      if (segs[2] && segs[3] === 'deposit' && req.method === 'POST') {
+        return parseBody(req, (err, body) => {
+          if (err || !body.amount) return sendJSON(res, 400, { error: 'amount is required' });
+          const goal = data.goals.find(g => g.id === segs[2]);
+          if (!goal) return sendJSON(res, 404, { error: 'Goal not found' });
+          const amount = Number(body.amount);
+          goal.saved += amount;
+          goal.history.push({ id: genId(), type: 'deposit', amount, date: body.date || today(), note: body.note || '' });
+          if (goal.saved >= goal.target && !goal.achieved) {
+            goal.achieved = true;
+            goal.achievedDate = today();
+          }
+          saveData(data);
+          return sendJSON(res, 200, goal);
+        });
+      }
+      if (segs[2] && segs[3] === 'withdraw' && req.method === 'POST') {
+        return parseBody(req, (err, body) => {
+          if (err || !body.amount) return sendJSON(res, 400, { error: 'amount is required' });
+          const goal = data.goals.find(g => g.id === segs[2]);
+          if (!goal) return sendJSON(res, 404, { error: 'Goal not found' });
+          const amount = Number(body.amount);
+          goal.saved = Math.max(0, goal.saved - amount);
+          goal.history.push({ id: genId(), type: 'withdraw', amount, date: body.date || today(), note: body.note || '' });
+          if (goal.saved < goal.target) { goal.achieved = false; goal.achievedDate = null; }
+          saveData(data);
+          return sendJSON(res, 200, goal);
         });
       }
       if (req.method === 'DELETE' && segs.length === 3) {

@@ -374,8 +374,7 @@
     const c = document.getElementById(containerId);
     if (!STATE.goals.length) { c.innerHTML = '<div class="empty-state">No goals yet</div>'; return; }
     c.innerHTML = STATE.goals.map(g => {
-      const bal = g.linkedBucket && STATE.savings[g.linkedBucket] ? STATE.savings[g.linkedBucket].balance : 0;
-      const pct = g.target > 0 ? Math.min(100, Math.round((bal / g.target) * 100)) : 0;
+      const pct = g.target > 0 ? Math.min(100, Math.round(((g.saved || 0) / g.target) * 100)) : 0;
       return `<div class="goal-item">
         <span class="goal-dot ${g.achieved ? 'done' : 'pending'}"></span>
         <div class="gi-main">
@@ -465,8 +464,15 @@
   // ================= SALES PAGE =================
   function renderSalesPage() {
     const all = STATE.sales.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-    el('salesTodayTotal').textContent = fmt(totalDay(STATE.sales, todayStr()));
-    el('salesMonthTotal').textContent = fmt(totalMonth(STATE.sales, thisMonth()));
+    const today = todayStr(), month = thisMonth();
+    const todaySales = STATE.sales.filter(s => s.date === today);
+    const monthSales = STATE.sales.filter(s => monthKey(s.date) === month);
+
+    el('salesTodayTotal').textContent = fmt(totalDay(STATE.sales, today));
+    el('salesTodayCapital').textContent = fmt(todaySales.reduce((s, x) => s + Number(x.capital || 0), 0));
+    el('salesTodayProfit').textContent = fmt(todaySales.reduce((s, x) => s + Number(x.profit !== undefined ? x.profit : x.amount), 0));
+    el('salesMonthTotal').textContent = fmt(totalMonth(STATE.sales, month));
+    el('salesMonthProfit').textContent = fmt(monthSales.reduce((s, x) => s + Number(x.profit !== undefined ? x.profit : x.amount), 0));
     el('salesCount').textContent = all.length;
 
     const tbody = el('salesTableBody');
@@ -476,8 +482,10 @@
         <td>${escapeHtml(s.itemName || '—')}</td>
         <td>${s.quantity}</td>
         <td style="text-align:right;color:var(--teal);font-weight:600;">${fmt(s.amount)}</td>
+        <td style="text-align:right;color:var(--muted);">${fmt(s.capital || 0)}</td>
+        <td style="text-align:right;color:${(s.profit || 0) >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600;">${fmt(s.profit !== undefined ? s.profit : s.amount)}</td>
         <td><div class="row-actions"><span class="icon-link" data-del-sale="${s.id}">✕</span></div></td>
-      </tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">No sales logged yet</div></td></tr>`;
+      </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state">No sales logged yet</div></td></tr>`;
   }
 
   // ================= CREDIT PAGE (accounts receivable) =================
@@ -538,7 +546,7 @@
         <div class="goal-item">
           <span class="goal-dot ${h.type === 'deposit' ? 'done' : 'pending'}"></span>
           <div class="gi-main">
-            <div class="gi-title">${h.type === 'deposit' ? '+' : '-'}${fmt(h.amount)}</div>
+            <div class="gi-title">${h.type === 'deposit' ? '+' : '-'}${fmt(h.amount)} ${h.source === 'auto' ? '<span class="tag" style="background:var(--blue-soft);color:var(--blue);font-size:9px;padding:1px 6px;">Auto</span>' : ''}</div>
             <div class="gi-sub">${h.date}${h.note ? ' · ' + escapeHtml(h.note) : ''}</div>
           </div>
         </div>`).join('') : '<div class="empty-state" style="padding:14px 0;">No activity yet</div>';
@@ -550,17 +558,32 @@
     const container = el('goalsFullList');
     if (!STATE.goals.length) { container.innerHTML = '<div class="empty-state">No goals yet — create one to start tracking.</div>'; return; }
     container.innerHTML = STATE.goals.map(g => {
-      const bal = g.linkedBucket && STATE.savings[g.linkedBucket] ? STATE.savings[g.linkedBucket].balance : 0;
-      const pct = g.target > 0 ? Math.min(100, Math.round((bal / g.target) * 100)) : 0;
-      return `<div style="padding:12px 0; border-bottom:1px solid var(--border);">
+      const saved = g.saved || 0;
+      const pct = g.target > 0 ? Math.min(100, Math.round((saved / g.target) * 100)) : 0;
+      const hist = (g.history || []).slice().reverse().slice(0, 8);
+      return `<div class="goal-full" data-goal-id="${g.id}" style="padding:14px 0; border-bottom:1px solid var(--border);">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
             <div style="font-weight:600;">${escapeHtml(g.title)} ${g.achieved ? '<span class="tag" style="background:rgba(53,208,127,0.15);color:#35d07f;">Achieved</span>' : ''}</div>
-            <div style="font-size:12px;color:var(--muted-2);margin-top:2px;">Target ${fmt(g.target)} · Deadline ${g.deadline || '—'} ${g.linkedBucket ? '· Tracking ' + capitalize(g.linkedBucket) + ' savings' : ''}</div>
+            <div style="font-size:12px;color:var(--muted-2);margin-top:2px;">${fmt(saved)} / ${fmt(g.target)} · Deadline ${g.deadline || '—'} ${g.linkedBucket ? '· Related to ' + capitalize(g.linkedBucket) + ' savings' : ''}</div>
           </div>
           <span class="icon-link" data-del-goal="${g.id}">✕</span>
         </div>
         <div class="progress-wide"><div class="fill" style="width:${pct}%; background:${g.achieved ? '#35d07f' : '#3b82f6'}"></div></div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr auto auto; gap:8px; margin-top:8px;">
+          <input type="number" placeholder="Amount" class="goal-amount" style="background:var(--panel-alt);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);" />
+          <input type="text" placeholder="Note (optional)" class="goal-note" style="background:var(--panel-alt);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);" />
+          <button class="btn primary sm" data-goal-action="deposit">Deposit</button>
+          <button class="btn ghost sm" data-goal-action="withdraw">Withdraw</button>
+        </div>
+        ${hist.length ? `<div class="scrollbox" style="max-height:110px; margin-top:8px;">${hist.map(h => `
+          <div class="goal-item">
+            <span class="goal-dot ${h.type === 'deposit' ? 'done' : 'pending'}"></span>
+            <div class="gi-main">
+              <div class="gi-title">${h.type === 'deposit' ? '+' : '-'}${fmt(h.amount)}</div>
+              <div class="gi-sub">${h.date}${h.note ? ' · ' + escapeHtml(h.note) : ''}</div>
+            </div>
+          </div>`).join('')}</div>` : ''}
       </div>`;
     }).join('');
   }
@@ -710,8 +733,15 @@
   document.getElementById('salesItemSelect').addEventListener('change', e => {
     const opt = e.target.options[e.target.selectedIndex];
     const nameInput = document.getElementById('salesItemNameInput');
+    const capitalInput = document.getElementById('salesCapitalInput');
     if (e.target.value && opt) {
       nameInput.value = opt.textContent.replace(/\s*\(\d+ in stock\)$/, '');
+      const item = STATE.inventory.find(i => i.id === e.target.value);
+      const qtyInput = document.querySelector('#salesForm [name="quantity"]');
+      const qty = Number((qtyInput && qtyInput.value) || 1);
+      if (item) capitalInput.value = item.unitCost * qty;
+    } else {
+      capitalInput.value = '';
     }
   });
 
@@ -752,7 +782,19 @@
     const delCredit = e.target.dataset.delCredit;
     const payCredit = e.target.dataset.payCredit;
     const restockId = e.target.dataset.restock;
+    const goalAction = e.target.dataset.goalAction;
     try {
+      if (goalAction) {
+        const wrap = e.target.closest('.goal-full');
+        const goalId = wrap && wrap.dataset.goalId;
+        const amountInput = wrap.querySelector('.goal-amount');
+        const noteInput = wrap.querySelector('.goal-note');
+        const amount = Number(amountInput.value);
+        if (!amount) return toast('Enter an amount', true);
+        await api('/goals/' + goalId + '/' + goalAction, { method: 'POST', body: JSON.stringify({ amount, note: noteInput.value }) });
+        toast(capitalize(goalAction) + ' recorded');
+        await loadAll();
+      }
       if (delIncome) { await api('/income/' + delIncome, { method: 'DELETE' }); toast('Removed'); await loadAll(); }
       if (delExpense) { await api('/expenses/' + delExpense, { method: 'DELETE' }); toast('Removed'); await loadAll(); }
       if (delGoal) { await api('/goals/' + delGoal, { method: 'DELETE' }); toast('Goal removed'); await loadAll(); }
@@ -925,6 +967,49 @@
 
   refreshUsbBackupList();
   refreshGdriveStatus();
+
+  // ================= SAVINGS AUTOMATION SETTINGS =================
+  async function refreshAutomationSettings() {
+    try {
+      const cfg = await api('/savings-automation');
+      el('automationEnabled').checked = !!cfg.enabled;
+      el('automationRate').value = cfg.ratePct;
+      el('automationEmergency').value = cfg.splitPct.emergency;
+      el('automationBusiness').value = cfg.splitPct.business;
+      el('automationHome').value = cfg.splitPct.home;
+    } catch (e) { /* ignore */ }
+  }
+  refreshAutomationSettings();
+
+  document.getElementById('automationForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const statusEl = el('automationStatus');
+    const body = {
+      enabled: el('automationEnabled').checked,
+      ratePct: Number(el('automationRate').value),
+      splitPct: {
+        emergency: Number(el('automationEmergency').value),
+        business: Number(el('automationBusiness').value),
+        home: Number(el('automationHome').value)
+      }
+    };
+    try {
+      await api('/savings-automation', { method: 'PUT', body: JSON.stringify(body) });
+      statusEl.textContent = 'Saved.';
+      toast('Savings automation settings saved');
+    } catch (err) { statusEl.textContent = ''; toast(err.message, true); }
+  });
+
+  document.getElementById('automationRecalcBtn').addEventListener('click', async () => {
+    const statusEl = el('automationStatus');
+    statusEl.textContent = 'Recalculating…';
+    try {
+      const r = await api('/savings-automation/recalculate', { method: 'POST' });
+      statusEl.textContent = 'Recalculated ' + r.datesProcessed + ' date(s).';
+      toast('Savings automation recalculated');
+      await loadAll();
+    } catch (err) { statusEl.textContent = ''; toast(err.message, true); }
+  });
 
   // ================= ACCOUNT: username display, logout, change password =================
   (async () => {

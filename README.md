@@ -125,6 +125,10 @@ mickyets-business-tracker/
 
 ## API (used by the frontend, but callable from anywhere)
 
+- `GET /api/savings-automation` / `PUT` `{enabled, ratePct, splitPct:{emergency,business,home}}` — configures the daily auto-save rule (splitPct must add up to 100)
+- `POST /api/savings-automation/recalculate` — reapplies the rule to every date that has income/expense entries (catch-up after changing the config, or after a bulk restore)
+- `POST /api/goals/:id/deposit` `{amount, note, date}` / `POST /api/goals/:id/withdraw` — goals now track their own `saved` balance directly, separate from the three savings buckets
+
 - `GET /api/data` — full dataset (income, expenses, inventory, sales, savings, goals)
 - `POST /api/income` `{source, amount, date, note}`
 - `DELETE /api/income/:id`
@@ -133,7 +137,7 @@ mickyets-business-tracker/
 - `POST /api/inventory` `{name, quantity, unitCost, sellingPrice, reorderLevel}`
 - `PUT /api/inventory/:id` `{restock}` (adds to quantity) or `{setQuantity, name, unitCost, sellingPrice, reorderLevel}` (edits fields directly)
 - `DELETE /api/inventory/:id`
-- `POST /api/sales` `{itemId?, itemName?, quantity, amount, date, note}` — if `itemId` is given, that inventory item's quantity is decremented automatically
+- `POST /api/sales` `{itemId?, itemName?, quantity, amount, capital?, date, note}` — if `itemId` is given, that inventory item's quantity is decremented automatically, and `capital` auto-fills from that item's unit cost (quantity × cost) unless you type your own; `profit` is always `amount - capital`
 - `DELETE /api/sales/:id`
 - `POST /api/customers` `{name, phone, notes}`
 - `DELETE /api/customers/:id`
