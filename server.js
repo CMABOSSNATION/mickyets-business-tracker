@@ -85,6 +85,20 @@ function loadData() {
 }
 
 // ---------- daily savings automation ----------
+// ---------- standard revenue/cost/profit formulas, used everywhere ----------
+// Revenue = Income entries + Sales amounts (all money that came in)
+// Cost    = Expenses + Sales capital (all money that went out, incl. cost of goods sold)
+// Net Balance = Revenue - Expenses            (pure cash flow)
+// Profit      = Revenue - Expenses - Capital  (true profitability, backs out cost of goods sold)
+function revenueForDate(data, dateStr) {
+  const income = data.income.filter(i => i.date === dateStr).reduce((s, i) => s + Number(i.amount), 0);
+  const sales = data.sales.filter(s => s.date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
+  return income + sales;
+}
+function capitalForDate(data, dateStr) {
+  return data.sales.filter(s => s.date === dateStr).reduce((s, x) => s + Number(x.capital || 0), 0);
+}
+
 // Recomputes what SHOULD have been auto-saved for one date, compares it to
 // what was already auto-saved for that date, and applies only the
 // difference — so calling this again for the same date (e.g. after editing
@@ -93,9 +107,8 @@ function applyDailyAutoSavings(data, dateStr) {
   const auto = data.savingsAutomation;
   if (!auto || !auto.enabled) return;
 
-  const dayIncome = data.income.filter(i => i.date === dateStr).reduce((s, i) => s + Number(i.amount), 0);
   const dayExpense = data.expenses.filter(e => e.date === dateStr).reduce((s, e) => s + Number(e.amount), 0);
-  const netBalance = dayIncome - dayExpense;
+  const netBalance = revenueForDate(data, dateStr) - dayExpense;
 
   const totalToSave = netBalance > 0 ? netBalance * (auto.ratePct / 100) : 0;
   const targets = {
@@ -222,16 +235,25 @@ function checkGoals(data, bucket) {
 }
 
 function buildReports(data) {
-  const months = {}; // { '2026-09': {income, expense} }
+  const months = {}; // { '2026-09': {income, expense, capital, profit} }
   data.income.forEach(i => {
     const m = monthKey(i.date);
-    months[m] = months[m] || { income: 0, expense: 0 };
+    months[m] = months[m] || { income: 0, expense: 0, capital: 0 };
     months[m].income += Number(i.amount) || 0;
+  });
+  data.sales.forEach(s => {
+    const m = monthKey(s.date);
+    months[m] = months[m] || { income: 0, expense: 0, capital: 0 };
+    months[m].income += Number(s.amount) || 0;     // sales are revenue too
+    months[m].capital += Number(s.capital || 0);   // cost of goods sold, backed out for profit
   });
   data.expenses.forEach(e => {
     const m = monthKey(e.date);
-    months[m] = months[m] || { income: 0, expense: 0 };
+    months[m] = months[m] || { income: 0, expense: 0, capital: 0 };
     months[m].expense += Number(e.amount) || 0;
+  });
+  Object.values(months).forEach(v => {
+    v.profit = v.income - v.expense - v.capital;
   });
 
   let bestIncomeMonth = null;
@@ -544,12 +566,15 @@ function handleRequest(req, res) {
             note: body.note || ''
           };
           data.sales.push(sale);
+          applyDailyAutoSavings(data, sale.date);
           saveData(data);
           return sendJSON(res, 201, sale);
         });
       }
       if (req.method === 'DELETE' && segs.length === 3) {
+        const removed = data.sales.find(s => s.id === segs[2]);
         data.sales = data.sales.filter(s => s.id !== segs[2]);
+        if (removed) applyDailyAutoSavings(data, removed.date);
         saveData(data);
         return sendJSON(res, 200, { ok: true });
       }

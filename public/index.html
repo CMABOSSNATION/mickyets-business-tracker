@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MICKYETS</title>
+<link rel="icon" type="image/png" href="/img/logo.png" />
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -13,7 +14,7 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark"></div>
+      <img class="brand-mark" src="/img/logo.png" alt="MICKYETS" />
       <div class="brand-name">MICKYETS<span>Business Manager</span></div>
     </div>
 
@@ -74,7 +75,7 @@
     <section class="content active" id="view-dashboard">
       <div class="grid stat-row">
         <div class="stat-card income">
-          <div class="label">Total Income This Month</div>
+          <div class="label">Total Revenue This Month</div>
           <div class="value" id="statIncome">UGX 0</div>
           <div class="trend">↗ Trend</div>
         </div>
@@ -86,13 +87,21 @@
         <div class="stat-card balance">
           <div class="label" style="color:var(--muted)">Net Balance</div>
           <div class="value" id="statBalance">UGX 0</div>
-          <div class="trend" style="color:var(--muted)">Income – Expenditure</div>
+          <div class="trend" style="color:var(--muted)">Revenue – Expenditure</div>
+        </div>
+        <div class="stat-card balance">
+          <div class="label" style="color:var(--muted)">Profit This Month</div>
+          <div class="value" id="statProfit" style="color:var(--teal)">UGX 0</div>
+          <div class="trend" style="color:var(--muted)">Revenue – Expenditure – Cost of goods</div>
         </div>
         <div class="stat-card growth">
           <div class="label" style="color:var(--muted)">Savings Growth Rate</div>
           <div class="value" id="statGrowth">+0%</div>
           <div class="trend" style="color:var(--muted)">vs last month</div>
         </div>
+      </div>
+      <div style="font-size:11px; color:var(--muted-2); margin:-10px 0 16px 4px;">
+        Revenue = income entries + sales. Profit backs out the cost of goods sold on sales; Net Balance doesn't.
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
@@ -505,9 +514,13 @@
         <button class="btn ghost" id="printReportBtn">Print / Share</button>
       </div>
       <div class="mini-stats">
-        <div class="mini-stat"><div class="label">Best income month</div><div class="value" id="repBestIncome">—</div></div>
+        <div class="mini-stat"><div class="label">Best revenue month</div><div class="value" id="repBestIncome">—</div></div>
         <div class="mini-stat"><div class="label">Worst expense month</div><div class="value" id="repWorstExpense">—</div></div>
         <div class="mini-stat"><div class="label">Net position (all time)</div><div class="value" id="repNet">—</div></div>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat"><div class="label">Total profit (all time)</div><div class="value" id="repProfit" style="color:var(--teal)">—</div></div>
+        <div class="mini-stat"><div class="label">Cost of goods sold (all time)</div><div class="value" id="repCapital" style="color:var(--muted)">—</div></div>
       </div>
       <div class="panel" style="margin-bottom:16px;">
         <div class="panel-head"><h3>Monthly Summary</h3></div>

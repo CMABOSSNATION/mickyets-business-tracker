@@ -12,7 +12,7 @@
     'Other': '#5f6578',
     'Home Rent': '#e2b93b'
   };
-  const SOURCE_COLORS = { 'Stationary': '#3b82f6', 'WiFi': '#16a394' };
+  const SOURCE_COLORS = { 'Stationary': '#3b82f6', 'WiFi': '#16a394', 'Sales': '#f2a93b' };
   const BUCKET_COLORS = { business: '#16a394', home: '#3b82f6', emergency: '#f2a93b' };
 
   let STATE = { income: [], expenses: [], savings: {}, goals: [], inventory: [], sales: [], customers: [], credits: [], meta: {} };
@@ -131,6 +131,16 @@
   function totalDay(list, d) {
     return list.filter(x => x.date === d).reduce((s, x) => s + Number(x.amount || 0), 0);
   }
+
+  // ---------- standard revenue/cost/profit formulas, used everywhere ----------
+  // Revenue = Income entries + Sales amounts. Cost = Expenses + Sales capital.
+  // Net Balance = Revenue - Expenses (cash flow). Profit = Net Balance - Capital (true profitability).
+  function revenueForMonth(m) { return totalMonth(STATE.income, m) + totalMonth(STATE.sales, m); }
+  function revenueForDay(d) { return totalDay(STATE.income, d) + totalDay(STATE.sales, d); }
+  function capitalForMonth(m) { return STATE.sales.filter(s => monthKey(s.date) === m).reduce((s, x) => s + Number(x.capital || 0), 0); }
+  function capitalForDay(d) { return STATE.sales.filter(s => s.date === d).reduce((s, x) => s + Number(x.capital || 0), 0); }
+  function profitForMonth(m) { return revenueForMonth(m) - totalMonth(STATE.expenses, m) - capitalForMonth(m); }
+  function profitForDay(d) { return revenueForDay(d) - totalDay(STATE.expenses, d) - capitalForDay(d); }
 
   function last6Months() {
     const arr = [];
@@ -268,13 +278,15 @@
   function renderDashboard() {
     const m = thisMonth();
     const today = todayStr();
-    const incomeMonth = totalMonth(STATE.income, m);
+    const incomeMonth = revenueForMonth(m);
     const expenseMonth = totalMonth(STATE.expenses, m);
     const balance = incomeMonth - expenseMonth;
+    const profitMonth = profitForMonth(m);
 
     el('statIncome').textContent = fmt(incomeMonth);
     el('statExpense').textContent = fmt(expenseMonth);
     el('statBalance').textContent = fmt(balance);
+    el('statProfit').textContent = fmt(profitMonth);
 
     const months = last6Months();
     const curM = months[5], prevM = months[4];
@@ -309,10 +321,10 @@
       sub.textContent = 'Log a sale or income entry to update this';
     }
 
-    const incByM = months.map(mk => totalMonth(STATE.income, mk));
+    const incByM = months.map(mk => revenueForMonth(mk));
     const expByM = months.map(mk => totalMonth(STATE.expenses, mk));
     drawLineChart('trendChart', months.map(monthLabel), [
-      { label: 'Income', color: '#16a394', data: incByM },
+      { label: 'Revenue', color: '#16a394', data: incByM },
       { label: 'Expenditure', color: '#e2574c', data: expByM }
     ]);
 
@@ -325,6 +337,8 @@
     });
 
     const bySource = sumBy(STATE.income, i => i.source);
+    const totalSalesRevenue = STATE.sales.reduce((s, x) => s + Number(x.amount), 0);
+    if (totalSalesRevenue > 0) bySource['Sales'] = totalSalesRevenue;
     renderPie('incomeStreamsChart', 'incomeStreamsLegend', bySource, SOURCE_COLORS);
 
     const byCat = sumBy(STATE.expenses, e => e.category);
@@ -591,7 +605,7 @@
   // ================= REPORTS PAGE =================
   function renderReportsPage() {
     const months = last6Months();
-    const incByM = months.map(mk => totalMonth(STATE.income, mk));
+    const incByM = months.map(mk => revenueForMonth(mk));
     const expByM = months.map(mk => totalMonth(STATE.expenses, mk));
 
     let bestIdx = 0, worstIdx = 0;
@@ -601,9 +615,12 @@
     el('repBestIncome').textContent = incByM[bestIdx] > 0 ? monthLabel(months[bestIdx]) + ' (' + fmt(incByM[bestIdx]) + ')' : '—';
     el('repWorstExpense').textContent = expByM[worstIdx] > 0 ? monthLabel(months[worstIdx]) + ' (' + fmt(expByM[worstIdx]) + ')' : '—';
 
-    const totalIncome = STATE.income.reduce((s, x) => s + Number(x.amount), 0);
+    const totalIncome = STATE.income.reduce((s, x) => s + Number(x.amount), 0) + STATE.sales.reduce((s, x) => s + Number(x.amount), 0);
     const totalExpense = STATE.expenses.reduce((s, x) => s + Number(x.amount), 0);
+    const totalCapital = STATE.sales.reduce((s, x) => s + Number(x.capital || 0), 0);
     el('repNet').textContent = fmt(totalIncome - totalExpense);
+    el('repProfit').textContent = fmt(totalIncome - totalExpense - totalCapital);
+    el('repCapital').textContent = fmt(totalCapital);
 
     drawBarChart('reportMonthlyChart', months.map(monthLabel), [
       { color: '#16a394', data: incByM },

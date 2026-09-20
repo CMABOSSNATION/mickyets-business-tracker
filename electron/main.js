@@ -22,6 +22,7 @@
  * it. See the `require.main === module` guard at the bottom of server.js.
  */
 const { app, BrowserWindow, protocol, shell } = require('electron');
+const path = require('path');
 const fs = require('fs');
 
 // ── Single-instance lock ─────────────────────────────────────────────────
@@ -120,6 +121,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f1115',
     autoHideMenuBar: true,
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false

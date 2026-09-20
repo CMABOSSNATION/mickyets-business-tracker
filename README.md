@@ -125,6 +125,12 @@ mickyets-business-tracker/
 
 ## API (used by the frontend, but callable from anywhere)
 
+- Standard revenue/cost/profit formulas, applied consistently everywhere in the app:
+  - **Revenue** = Income entries + Sales amounts (all money that came in)
+  - **Cost** = Expenses + Sales capital (all money that went out, including cost of goods sold)
+  - **Net Balance** = Revenue − Expenses (pure cash flow)
+  - **Profit** = Net Balance − Sales capital (true profitability, backs out cost of goods sold)
+
 - `GET /api/savings-automation` / `PUT` `{enabled, ratePct, splitPct:{emergency,business,home}}` — configures the daily auto-save rule (splitPct must add up to 100)
 - `POST /api/savings-automation/recalculate` — reapplies the rule to every date that has income/expense entries (catch-up after changing the config, or after a bulk restore)
 - `POST /api/goals/:id/deposit` `{amount, note, date}` / `POST /api/goals/:id/withdraw` — goals now track their own `saved` balance directly, separate from the three savings buckets
