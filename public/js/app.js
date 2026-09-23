@@ -15,7 +15,7 @@
   const SOURCE_COLORS = { 'Stationary': '#3b82f6', 'WiFi': '#16a394', 'Sales': '#f2a93b' };
   const BUCKET_COLORS = { business: '#16a394', home: '#3b82f6', emergency: '#f2a93b' };
 
-  let STATE = { income: [], expenses: [], savings: {}, goals: [], inventory: [], sales: [], customers: [], credits: [], meta: {} };
+  let STATE = { income: [], expenses: [], savings: {}, goals: [], inventory: [], sales: [], customers: [], credits: [], cashAtHand: { balance: 0, history: [] }, meta: {} };
 
   // Session token: sent as a header on every API call. This is what makes
   // login work identically whether the page is served over real HTTP
@@ -141,6 +141,50 @@
   function capitalForDay(d) { return STATE.sales.filter(s => s.date === d).reduce((s, x) => s + Number(x.capital || 0), 0); }
   function profitForMonth(m) { return revenueForMonth(m) - totalMonth(STATE.expenses, m) - capitalForMonth(m); }
   function profitForDay(d) { return revenueForDay(d) - totalDay(STATE.expenses, d) - capitalForDay(d); }
+
+  // ---------- dashboard period navigation (Day / Week / Month) ----------
+  let dashPeriodType = 'day';
+  let dashPeriodOffset = 0; // 0 = current, -1 = previous, +1 = next (capped at 0)
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function toDateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+  function getPeriodRange(type, offset) {
+    const now = new Date();
+    if (type === 'day') {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+      const ds = toDateStr(d);
+      const label = offset === 0 ? 'Today' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      return { start: ds, end: ds, label };
+    }
+    if (type === 'week') {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const dow = (d.getDay() + 6) % 7; // 0 = Monday
+      d.setDate(d.getDate() - dow + offset * 7);
+      const start = new Date(d);
+      const end = new Date(d); end.setDate(end.getDate() + 6);
+      const label = (offset === 0 ? 'This Week: ' : '') + start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' – ' + end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return { start: toDateStr(start), end: toDateStr(end), label };
+    }
+    // month
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const start = toDateStr(d);
+    const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const label = (offset === 0 ? 'This Month: ' : '') + d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    return { start, end: toDateStr(endD), label };
+  }
+
+  function inRange(dateStr, range) { return dateStr >= range.start && dateStr <= range.end; }
+
+  function sumInRange(list, range) { return list.filter(x => inRange(x.date, range)).reduce((s, x) => s + Number(x.amount || 0), 0); }
+  function capitalInRange(range) { return STATE.sales.filter(s => inRange(s.date, range)).reduce((s, x) => s + Number(x.capital || 0), 0); }
+
+  function periodStats(range) {
+    const income = sumInRange(STATE.income, range) + sumInRange(STATE.sales, range);
+    const expense = sumInRange(STATE.expenses, range);
+    const capital = capitalInRange(range);
+    return { income, expense, balance: income - expense, profit: income - expense - capital };
+  }
 
   function last6Months() {
     const arr = [];
@@ -276,18 +320,28 @@
 
   // ================= DASHBOARD =================
   function renderDashboard() {
-    const m = thisMonth();
     const today = todayStr();
-    const incomeMonth = revenueForMonth(m);
-    const expenseMonth = totalMonth(STATE.expenses, m);
-    const balance = incomeMonth - expenseMonth;
-    const profitMonth = profitForMonth(m);
+    const range = getPeriodRange(dashPeriodType, dashPeriodOffset);
+    const stats = periodStats(range);
 
-    el('statIncome').textContent = fmt(incomeMonth);
-    el('statExpense').textContent = fmt(expenseMonth);
-    el('statBalance').textContent = fmt(balance);
-    el('statProfit').textContent = fmt(profitMonth);
+    el('periodLabel').textContent = range.label;
+    el('statIncome').textContent = fmt(stats.income);
+    el('statExpense').textContent = fmt(stats.expense);
+    el('statBalance').textContent = fmt(stats.balance);
+    el('statProfit').textContent = fmt(stats.profit);
 
+    el('statCashAtHand').textContent = fmt(STATE.cashAtHand ? STATE.cashAtHand.balance : 0);
+    const totalCapital = STATE.inventory.reduce((s, i) => s + (Number(i.quantity) * Number(i.unitCost)), 0);
+    el('statTotalCapital').textContent = fmt(totalCapital);
+    const currentGoal = STATE.goals.find(g => !g.achieved);
+    if (currentGoal) {
+      const pct = currentGoal.target > 0 ? Math.min(100, Math.round((currentGoal.saved / currentGoal.target) * 100)) : 0;
+      el('statCurrentGoal').textContent = currentGoal.title + ' (' + pct + '%)';
+    } else {
+      el('statCurrentGoal').textContent = STATE.goals.length ? 'All goals achieved 🎉' : 'No goal set';
+    }
+
+    const m = thisMonth();
     const months = last6Months();
     const curM = months[5], prevM = months[4];
     let curDep = 0, prevDep = 0;
@@ -653,6 +707,27 @@
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   if (hamburgerBtn) hamburgerBtn.addEventListener('click', () => document.body.classList.add('sidebar-open'));
   if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+
+  // ================= DASHBOARD PERIOD NAVIGATION =================
+  document.querySelectorAll('.period-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      dashPeriodType = tab.dataset.period;
+      dashPeriodOffset = 0;
+      document.querySelectorAll('.period-tab').forEach(t => {
+        const active = t === tab;
+        t.classList.toggle('active', active);
+        t.style.background = active ? 'var(--teal)' : 'transparent';
+        t.style.color = active ? '#06231f' : 'var(--muted)';
+      });
+      renderDashboard();
+    });
+  });
+  const periodPrevBtn = document.getElementById('periodPrevBtn');
+  const periodNextBtn = document.getElementById('periodNextBtn');
+  const periodTodayBtn = document.getElementById('periodTodayBtn');
+  if (periodPrevBtn) periodPrevBtn.addEventListener('click', () => { dashPeriodOffset -= 1; renderDashboard(); });
+  if (periodNextBtn) periodNextBtn.addEventListener('click', () => { dashPeriodOffset = Math.min(0, dashPeriodOffset + 1); renderDashboard(); });
+  if (periodTodayBtn) periodTodayBtn.addEventListener('click', () => { dashPeriodOffset = 0; renderDashboard(); });
 
   // ================= FORM HANDLERS =================
   function formData(form) {

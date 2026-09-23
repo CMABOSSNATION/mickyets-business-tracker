@@ -73,35 +73,64 @@
 
     <!-- ---------------- DASHBOARD ---------------- -->
     <section class="content active" id="view-dashboard">
-      <div class="grid stat-row">
-        <div class="stat-card income">
-          <div class="label">Total Revenue This Month</div>
-          <div class="value" id="statIncome">UGX 0</div>
-          <div class="trend">↗ Trend</div>
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-head" style="flex-wrap:wrap; gap:10px;">
+          <h3 id="periodLabel">Today</h3>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button class="btn ghost sm" id="periodPrevBtn">←</button>
+            <div style="display:flex; background:var(--panel-alt); border-radius:8px; padding:2px; gap:2px;">
+              <button class="btn sm period-tab active" data-period="day" style="background:var(--teal); color:#06231f;">Day</button>
+              <button class="btn sm period-tab" data-period="week" style="background:transparent; color:var(--muted);">Week</button>
+              <button class="btn sm period-tab" data-period="month" style="background:transparent; color:var(--muted);">Month</button>
+            </div>
+            <button class="btn ghost sm" id="periodNextBtn">→</button>
+            <button class="btn ghost sm" id="periodTodayBtn">Today</button>
+          </div>
         </div>
-        <div class="stat-card expense">
-          <div class="label">Total Expenditure</div>
-          <div class="value" id="statExpense">UGX 0</div>
-          <div class="trend">↘ Trend</div>
+        <div class="grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card income">
+            <div class="label">Income</div>
+            <div class="value" id="statIncome">UGX 0</div>
+            <div class="trend">↗ Revenue</div>
+          </div>
+          <div class="stat-card expense">
+            <div class="label">Expenditure</div>
+            <div class="value" id="statExpense">UGX 0</div>
+            <div class="trend">↘ Costs</div>
+          </div>
+          <div class="stat-card balance">
+            <div class="label" style="color:var(--muted)">Net Balance</div>
+            <div class="value" id="statBalance">UGX 0</div>
+            <div class="trend" style="color:var(--muted)">Income – Expenditure</div>
+          </div>
+          <div class="stat-card balance">
+            <div class="label" style="color:var(--muted)">Profit</div>
+            <div class="value" id="statProfit" style="color:var(--teal)">UGX 0</div>
+            <div class="trend" style="color:var(--muted)">Net Balance – Cost of goods</div>
+          </div>
         </div>
-        <div class="stat-card balance">
-          <div class="label" style="color:var(--muted)">Net Balance</div>
-          <div class="value" id="statBalance">UGX 0</div>
-          <div class="trend" style="color:var(--muted)">Revenue – Expenditure</div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:16px;">
+        <div class="mini-stat">
+          <div class="label">Cash at Hand</div>
+          <div class="value" id="statCashAtHand" style="color:var(--blue)">UGX 0</div>
         </div>
-        <div class="stat-card balance">
-          <div class="label" style="color:var(--muted)">Profit This Month</div>
-          <div class="value" id="statProfit" style="color:var(--teal)">UGX 0</div>
-          <div class="trend" style="color:var(--muted)">Revenue – Expenditure – Cost of goods</div>
+        <div class="mini-stat">
+          <div class="label">Total Capital (stock value)</div>
+          <div class="value" id="statTotalCapital" style="color:var(--orange)">UGX 0</div>
         </div>
-        <div class="stat-card growth">
-          <div class="label" style="color:var(--muted)">Savings Growth Rate</div>
-          <div class="value" id="statGrowth">+0%</div>
-          <div class="trend" style="color:var(--muted)">vs last month</div>
+        <div class="mini-stat">
+          <div class="label">Savings Growth Rate</div>
+          <div class="value" id="statGrowth" style="color:var(--green)">+0%</div>
+        </div>
+        <div class="mini-stat">
+          <div class="label">Current Goal</div>
+          <div class="value" id="statCurrentGoal" style="font-size:14px;">No goal set</div>
         </div>
       </div>
       <div style="font-size:11px; color:var(--muted-2); margin:-10px 0 16px 4px;">
-        Revenue = income entries + sales. Profit backs out the cost of goods sold on sales; Net Balance doesn't.
+        Cash at Hand auto-forwards to your current goal. Once a goal is 100% funded, new savings shift to the next one.
       </div>
 
       <div class="panel" style="margin-bottom:16px;">

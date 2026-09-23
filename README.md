@@ -1,5 +1,10 @@
 # MICKYETS Business Tracker
 
+**→ For how the app actually works — the formulas, the daily savings
+automation, Cash at Hand, goals, all of it explained in plain language —
+see [DOCUMENTATION.md](./DOCUMENTATION.md). This README is the technical
+setup/build guide; that file is the "how do I use this" guide.**
+
 Business management dashboard for Clean Money Avenue — income, expenses,
 inventory, daily sales, customer credit (accounts receivable), three
 savings buckets, financial goals, reports, backups (phone storage / USB
@@ -132,7 +137,8 @@ mickyets-business-tracker/
   - **Profit** = Net Balance − Sales capital (true profitability, backs out cost of goods sold)
 
 - `GET /api/savings-automation` / `PUT` `{enabled, ratePct, splitPct:{emergency,business,home}}` — configures the daily auto-save rule (splitPct must add up to 100)
-- `POST /api/savings-automation/recalculate` — reapplies the rule to every date that has income/expense entries (catch-up after changing the config, or after a bulk restore)
+- `POST /api/savings-automation/recalculate` — reapplies the rule to every date that has income/expense/sales entries (catch-up after changing the config, or after a bulk restore)
+- `POST /api/cash-at-hand/sweep` — manually forwards whatever's in Cash at Hand to the current goal, if one exists (normally happens automatically)
 - `POST /api/goals/:id/deposit` `{amount, note, date}` / `POST /api/goals/:id/withdraw` — goals now track their own `saved` balance directly, separate from the three savings buckets
 
 - `GET /api/data` — full dataset (income, expenses, inventory, sales, savings, goals)

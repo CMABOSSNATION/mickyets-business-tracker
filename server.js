@@ -37,12 +37,13 @@ function defaultData() {
   });
   return {
     income: [], expenses: [], savings, goals: [], inventory: [], sales: [], customers: [], credits: [],
+    cashAtHand: { balance: 0, history: [] },
     savingsAutomation: {
       enabled: true,
       // all percentages, not fractions — 20 means 20%
-      ratePct: 20,                          // % of a day's net balance that gets saved
+      ratePct: 20,                          // % of a day's PROFIT that gets saved
       splitPct: { emergency: 20, business: 40, home: 40 }, // how that gets divided between buckets
-      appliedDates: {}                      // { '2026-09-18': { emergency: 800, business: 1600, home: 1600 } }
+      appliedDates: {}                      // { '2026-09-18': { emergency: 800, business: 1600, home: 1600, cash: 3200 } }
     }
   };
 }
@@ -55,6 +56,7 @@ function migrateData(parsed) {
   if (!parsed.savingsAutomation) {
     parsed.savingsAutomation = defaultData().savingsAutomation;
   }
+  if (!parsed.cashAtHand) parsed.cashAtHand = { balance: 0, history: [] };
   // sales made before capital/profit tracking existed: default to 0 so the
   // math (profit = amount - capital) still works, no crashes on old data
   parsed.sales.forEach(s => { if (s.capital === undefined) s.capital = 0; });
@@ -84,7 +86,6 @@ function loadData() {
   }
 }
 
-// ---------- daily savings automation ----------
 // ---------- standard revenue/cost/profit formulas, used everywhere ----------
 // Revenue = Income entries + Sales amounts (all money that came in)
 // Cost    = Expenses + Sales capital (all money that went out, incl. cost of goods sold)
@@ -98,26 +99,66 @@ function revenueForDate(data, dateStr) {
 function capitalForDate(data, dateStr) {
   return data.sales.filter(s => s.date === dateStr).reduce((s, x) => s + Number(x.capital || 0), 0);
 }
+function profitForDate(data, dateStr) {
+  const dayExpense = data.expenses.filter(e => e.date === dateStr).reduce((s, e) => s + Number(e.amount), 0);
+  return revenueForDate(data, dateStr) - dayExpense - capitalForDate(data, dateStr);
+}
+
+// "Current" goal = the first not-yet-achieved goal, in the order they were
+// created. Once it hits 100% it's marked achieved, and this function then
+// naturally returns the next one — that's the whole "shift to next goal"
+// behaviour, no extra bookkeeping needed.
+function getCurrentGoal(data) {
+  return data.goals.find(g => !g.achieved) || null;
+}
+
+// Whatever is sitting in Cash at Hand moves into the current goal
+// immediately. If there's no active goal (none created, or all achieved),
+// it just stays parked in Cash at Hand until one exists.
+function sweepCashAtHandToCurrentGoal(data) {
+  if (data.cashAtHand.balance <= 0) return;
+  const goal = getCurrentGoal(data);
+  if (!goal) return;
+
+  const amount = data.cashAtHand.balance;
+  data.cashAtHand.balance = 0;
+  data.cashAtHand.history.push({
+    id: genId(), type: 'withdraw', amount, date: today(),
+    note: 'Forwarded to goal: ' + goal.title, source: 'auto'
+  });
+  goal.saved += amount;
+  goal.history.push({
+    id: genId(), type: 'deposit', amount, date: today(),
+    note: 'Auto-forwarded from Cash at Hand', source: 'auto'
+  });
+  if (goal.saved >= goal.target && !goal.achieved) {
+    goal.achieved = true;
+    goal.achievedDate = today();
+    // if this transfer overshot the goal, or there's a next goal waiting,
+    // nothing further to do here — the OVERSHOOT simply stays credited to
+    // this goal. Cash at Hand is already fully drained for this sweep.
+  }
+}
 
 // Recomputes what SHOULD have been auto-saved for one date, compares it to
 // what was already auto-saved for that date, and applies only the
 // difference — so calling this again for the same date (e.g. after editing
-// an entry) tops up or claws back instead of double-depositing.
+// an entry) tops up or claws back instead of double-depositing. Whatever
+// isn't swept into savings goes to Cash at Hand, which is then immediately
+// forwarded to the current goal if one exists.
 function applyDailyAutoSavings(data, dateStr) {
   const auto = data.savingsAutomation;
   if (!auto || !auto.enabled) return;
 
-  const dayExpense = data.expenses.filter(e => e.date === dateStr).reduce((s, e) => s + Number(e.amount), 0);
-  const netBalance = revenueForDate(data, dateStr) - dayExpense;
-
-  const totalToSave = netBalance > 0 ? netBalance * (auto.ratePct / 100) : 0;
+  const profit = profitForDate(data, dateStr);
+  const totalToSave = profit > 0 ? profit * (auto.ratePct / 100) : 0;
   const targets = {
     emergency: totalToSave * (auto.splitPct.emergency / 100),
     business: totalToSave * (auto.splitPct.business / 100),
     home: totalToSave * (auto.splitPct.home / 100)
   };
 
-  if (!auto.appliedDates[dateStr]) auto.appliedDates[dateStr] = { emergency: 0, business: 0, home: 0 };
+  if (!auto.appliedDates[dateStr]) auto.appliedDates[dateStr] = { emergency: 0, business: 0, home: 0, cash: 0 };
   const previously = auto.appliedDates[dateStr];
 
   SAVINGS_BUCKETS.forEach(bucket => {
@@ -131,11 +172,30 @@ function applyDailyAutoSavings(data, dateStr) {
       type: delta > 0 ? 'deposit' : 'withdraw',
       amount: Math.abs(delta),
       date: dateStr,
-      note: 'Daily savings automation (' + auto.ratePct + '% of ' + dateStr + ' net balance)',
+      note: 'Daily savings automation (' + auto.ratePct + '% of ' + dateStr + ' profit)',
       source: 'auto'
     });
     previously[bucket] = target;
   });
+
+  const remainder = profit - totalToSave;
+  const already = Math.round(previously.cash || 0);
+  const target = Math.round(remainder);
+  const delta = target - already;
+  if (delta !== 0) {
+    data.cashAtHand.balance += delta;
+    data.cashAtHand.history.push({
+      id: genId(),
+      type: delta > 0 ? 'deposit' : 'withdraw',
+      amount: Math.abs(delta),
+      date: dateStr,
+      note: 'Left over after savings (' + dateStr + ' profit, minus the ' + auto.ratePct + '% saved)',
+      source: 'auto'
+    });
+    previously.cash = target;
+  }
+
+  sweepCashAtHandToCurrentGoal(data);
 }
 
 function saveData(data) {
@@ -488,10 +548,18 @@ function handleRequest(req, res) {
         const dates = new Set();
         data.income.forEach(i => dates.add(i.date));
         data.expenses.forEach(e => dates.add(e.date));
+        data.sales.forEach(s => dates.add(s.date));
         dates.forEach(d => applyDailyAutoSavings(data, d));
         saveData(data);
         return sendJSON(res, 200, { ok: true, datesProcessed: dates.size });
       }
+    }
+
+    // ---- cash at hand ----
+    if (segs[1] === 'cash-at-hand' && segs[2] === 'sweep' && req.method === 'POST') {
+      sweepCashAtHandToCurrentGoal(data);
+      saveData(data);
+      return sendJSON(res, 200, { ok: true, balance: data.cashAtHand.balance });
     }
 
     // ---- inventory ----
@@ -789,6 +857,7 @@ function handleRequest(req, res) {
             achievedDate: null
           };
           data.goals.push(goal);
+          sweepCashAtHandToCurrentGoal(data);
           saveData(data);
           return sendJSON(res, 201, goal);
         });
