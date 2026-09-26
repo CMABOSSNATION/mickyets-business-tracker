@@ -78,25 +78,27 @@ forward through history one period at a time — yesterday, the day
 before, last week, last month, and so on. **Today** jumps straight back
 to the current period. You can't navigate into the future.
 
-### The always-visible row
+### The second row
 
-Below the period cards, four figures that aren't tied to whichever
-period you're viewing — they're always current:
+- **Cash at Hand** — always current, not period-scoped — see section 6
+- **Capital from sales** — *follows the Day/Week/Month tab above it.*
+  This is the cost of goods sold on sales made in that period (the
+  `capital` figure tracked per sale), not unsold stock sitting in
+  Inventory — i.e. "how much capital did selling actually use up this
+  period," not "how much capital is tied up on the shelf right now."
+- **Savings Growth Rate** — always current — this month's savings
+  deposits vs last month's, as a percentage change
+- **Current Goal** — always current — whichever goal is receiving
+  automatic deposits right now, and its progress — see section 6
 
-- **Cash at Hand** — see section 6
-- **Total Capital (stock value)** — your current Inventory, valued at
-  cost price (quantity × unit cost, summed across every item). This is
-  "how much capital is tied up in stock right now."
-- **Savings Growth Rate** — this month's savings deposits vs last
-  month's, as a percentage change
-- **Current Goal** — whichever goal is currently receiving automatic
-  deposits, and its progress — see section 6
+### Money Flow panel
 
-### Today's Money Flow
-
-A quick, always-today snapshot: whether money came in today at all (a
-green/red indicator), today's sales total, and how much customers
-currently owe you on credit.
+Also follows the Day/Week/Month tab: the green/red "money coming in"
+indicator, the sales total, and the money breakdown all reflect whichever
+period is selected — switch to Week and it shows the week's sales, not
+just today's. Outstanding credit is the one figure here that's always
+current regardless of period, since "how much is owed to me right now"
+doesn't really have a meaningful past-tense version.
 
 ---
 
@@ -165,8 +167,10 @@ the Goals page, independent of the automation.
 When you record a sale and link it to an Inventory item:
 
 - that item's stock quantity goes down by the quantity sold
-- the sale's **capital** auto-fills from that item's cost price × quantity
-  (you can still overwrite it by hand if the actual cost differed)
+- the **Amount** field auto-fills from that item's selling price × quantity
+- the **Capital** field auto-fills from that item's cost price × quantity
+- both stay editable by hand — if you sold at a discount, or the actual
+  cost differed that day, just type over the auto-filled number
 - **profit** on that sale is always `amount received − capital`
 
 If a sale isn't linked to any Inventory item (a walk-in service, a

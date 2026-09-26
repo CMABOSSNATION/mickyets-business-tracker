@@ -320,7 +320,6 @@
 
   // ================= DASHBOARD =================
   function renderDashboard() {
-    const today = todayStr();
     const range = getPeriodRange(dashPeriodType, dashPeriodOffset);
     const stats = periodStats(range);
 
@@ -331,8 +330,11 @@
     el('statProfit').textContent = fmt(stats.profit);
 
     el('statCashAtHand').textContent = fmt(STATE.cashAtHand ? STATE.cashAtHand.balance : 0);
-    const totalCapital = STATE.inventory.reduce((s, i) => s + (Number(i.quantity) * Number(i.unitCost)), 0);
-    el('statTotalCapital').textContent = fmt(totalCapital);
+    // "Total Capital" here means capital actually spent on sales made in
+    // the selected period (cost of goods sold) — not unsold stock value.
+    const periodCapital = capitalInRange(range);
+    el('statTotalCapital').textContent = fmt(periodCapital);
+    el('statTotalCapitalLabel').textContent = 'Capital from sales (' + range.label + ')';
     const currentGoal = STATE.goals.find(g => !g.achieved);
     if (currentGoal) {
       const pct = currentGoal.target > 0 ? Math.min(100, Math.round((currentGoal.saved / currentGoal.target) * 100)) : 0;
@@ -356,22 +358,26 @@
     const growth = prevDep > 0 ? Math.round(((curDep - prevDep) / prevDep) * 100) : (curDep > 0 ? 100 : 0);
     el('statGrowth').textContent = (growth >= 0 ? '+' : '') + growth + '%';
 
-    const todaySales = totalDay(STATE.sales, today);
-    const todayIncome = totalDay(STATE.income, today);
-    const moneyInToday = todaySales + todayIncome;
-    el('statTodaySales').textContent = fmt(todaySales);
+    // period-scoped sales/income for the Money Flow panel — follows the
+    // same Day/Week/Month tab as everything else on the dashboard now
+    const periodSales = sumInRange(STATE.sales, range);
+    const periodIncome = sumInRange(STATE.income, range);
+    const moneyInPeriod = periodSales + periodIncome;
+    el('statTodaySales').textContent = fmt(periodSales);
+    el('statTodaySalesLabel').textContent = 'Sales total (' + range.label + ')';
+    el('moneyFlowHeading').textContent = 'Money Flow — ' + range.label;
     const outstanding = STATE.credits.filter(c => !c.paid).reduce((s, c) => s + Number(c.amount), 0);
     el('statOutstandingCredit').textContent = fmt(outstanding);
     const ind = el('moneyInIndicator');
     const txt = el('moneyInText');
     const sub = el('moneyInSub');
-    if (moneyInToday > 0) {
+    if (moneyInPeriod > 0) {
       ind.className = 'money-indicator yes';
-      txt.textContent = 'Money is coming in today';
-      sub.textContent = fmt(todaySales) + ' in sales, ' + fmt(todayIncome) + ' in other income';
+      txt.textContent = 'Money came in (' + range.label + ')';
+      sub.textContent = fmt(periodSales) + ' in sales, ' + fmt(periodIncome) + ' in other income';
     } else {
       ind.className = 'money-indicator no';
-      txt.textContent = 'No sales or income logged today';
+      txt.textContent = 'No sales or income logged (' + range.label + ')';
       sub.textContent = 'Log a sale or income entry to update this';
     }
 
@@ -822,20 +828,36 @@
     } catch (err) { toast(err.message, true); }
   });
 
+  function updateSalesAutoFields() {
+    const itemSelect = document.getElementById('salesItemSelect');
+    const capitalInput = document.getElementById('salesCapitalInput');
+    const amountInput = document.getElementById('salesAmountInput');
+    const qtyInput = document.getElementById('salesQuantityInput');
+    const qty = Number((qtyInput && qtyInput.value) || 1);
+    if (itemSelect.value) {
+      const item = STATE.inventory.find(i => i.id === itemSelect.value);
+      if (item) {
+        capitalInput.value = item.unitCost * qty;
+        amountInput.value = item.sellingPrice * qty;
+      }
+    }
+  }
+
   document.getElementById('salesItemSelect').addEventListener('change', e => {
     const opt = e.target.options[e.target.selectedIndex];
     const nameInput = document.getElementById('salesItemNameInput');
     const capitalInput = document.getElementById('salesCapitalInput');
+    const amountInput = document.getElementById('salesAmountInput');
     if (e.target.value && opt) {
       nameInput.value = opt.textContent.replace(/\s*\(\d+ in stock\)$/, '');
-      const item = STATE.inventory.find(i => i.id === e.target.value);
-      const qtyInput = document.querySelector('#salesForm [name="quantity"]');
-      const qty = Number((qtyInput && qtyInput.value) || 1);
-      if (item) capitalInput.value = item.unitCost * qty;
+      updateSalesAutoFields();
     } else {
       capitalInput.value = '';
+      amountInput.value = '';
     }
   });
+
+  document.getElementById('salesQuantityInput').addEventListener('input', updateSalesAutoFields);
 
   document.querySelectorAll('.savings-bucket-panel').forEach(panel => {
     const b = panel.dataset.bucket;

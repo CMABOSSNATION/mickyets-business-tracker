@@ -117,7 +117,7 @@
           <div class="value" id="statCashAtHand" style="color:var(--blue)">UGX 0</div>
         </div>
         <div class="mini-stat">
-          <div class="label">Total Capital (stock value)</div>
+          <div class="label" id="statTotalCapitalLabel">Capital (from sales)</div>
           <div class="value" id="statTotalCapital" style="color:var(--orange)">UGX 0</div>
         </div>
         <div class="mini-stat">
@@ -134,7 +134,7 @@
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <div class="panel-head"><h3>Today's Money Flow</h3></div>
+        <div class="panel-head"><h3 id="moneyFlowHeading">Today's Money Flow</h3></div>
         <div class="grid" style="grid-template-columns: 1.3fr 1fr 1fr;">
           <div class="money-indicator" id="moneyInIndicator">
             <span class="dotlg"></span>
@@ -144,7 +144,7 @@
             </div>
           </div>
           <div class="mini-stat" style="border-radius:var(--radius-sm);">
-            <div class="label">Today's sales total</div>
+            <div class="label" id="statTodaySalesLabel">Today's sales total</div>
             <div class="value" id="statTodaySales">UGX 0</div>
           </div>
           <div class="mini-stat" style="border-radius:var(--radius-sm);">
@@ -361,8 +361,8 @@
               <select name="itemId" id="salesItemSelect"><option value="">— not from inventory —</option></select>
             </div>
             <div class="field"><label>Item name</label><input type="text" name="itemName" id="salesItemNameInput" placeholder="e.g. Printing job" /></div>
-            <div class="field"><label>Quantity</label><input type="number" name="quantity" value="1" /></div>
-            <div class="field"><label>Amount received (UGX)</label><input type="number" name="amount" required /></div>
+            <div class="field"><label>Quantity</label><input type="number" name="quantity" id="salesQuantityInput" value="1" /></div>
+            <div class="field"><label>Amount received (UGX)</label><input type="number" name="amount" id="salesAmountInput" required placeholder="Auto-filled from inventory selling price if linked above" /></div>
             <div class="field"><label>Capital / cost (optional)</label><input type="number" name="capital" id="salesCapitalInput" placeholder="Auto-filled from inventory cost if linked above" /></div>
             <div class="field"><label>Date</label><input type="date" name="date" /></div>
             <div class="field"><label>Note</label><textarea name="note" placeholder="Optional note"></textarea></div>
